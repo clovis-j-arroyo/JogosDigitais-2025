@@ -3,11 +3,13 @@ package br.mackenzie;
 import com.badlogic.gdx.ApplicationListener;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Input;
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.OrthographicCamera;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
+import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.math.Vector2;
 import com.badlogic.gdx.utils.Array;
@@ -15,6 +17,7 @@ import com.badlogic.gdx.utils.Array;
 public class Main implements ApplicationListener {
     SpriteBatch batch;
     OrthographicCamera camera;
+    ShapeRenderer shapeRenderer; // <-- usado para desenhar hitboxes
 
     // Texturas do jogador
     Texture cyclistSideTexture;
@@ -27,6 +30,7 @@ public class Main implements ApplicationListener {
 
     // Posição e movimentação
     Vector2 worldPosition;
+    Rectangle hitboxJogador;
     float speed = 200f;
     int direction = 0;
     float scale = 0.25f;
@@ -41,6 +45,7 @@ public class Main implements ApplicationListener {
     @Override
     public void create() {
         batch = new SpriteBatch();
+        shapeRenderer = new ShapeRenderer();
 
         camera = new OrthographicCamera();
         camera.setToOrtho(false, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
@@ -57,15 +62,16 @@ public class Main implements ApplicationListener {
 
         // Posição inicial
         worldPosition = new Vector2(worldWidth / 2f, worldHeight / 2f);
+        updatePlayerHitbox();
 
         // Cria lista de objetos
         objetos = new Array<>();
 
-        // Adiciona um objeto fixo no centro
+        // Adiciona um objeto fixo no centro (tipo 1 → desaparece ao tocar)
         Texture specialGrass = new Texture("GRASS+.png");
         float centerX = worldWidth / 2f - specialGrass.getWidth() / 2f;
         float centerY = worldHeight / 2f - specialGrass.getHeight() / 2f;
-        objetos.add(new GameObject(centerX, centerY, specialGrass));
+        objetos.add(new GameObject(centerX, centerY, specialGrass, 1));
     }
 
     @Override
@@ -79,6 +85,7 @@ public class Main implements ApplicationListener {
         float delta = Gdx.graphics.getDeltaTime();
 
         handleInput(delta);
+        logic();
         updateCamera();
 
         Gdx.gl.glClearColor(0.2f, 0.3f, 0.2f, 1);
@@ -86,9 +93,9 @@ public class Main implements ApplicationListener {
 
         camera.update();
         batch.setProjectionMatrix(camera.combined);
+        shapeRenderer.setProjectionMatrix(camera.combined);
 
         batch.begin();
-
         drawTiledBackground();
 
         // Desenha os objetos
@@ -97,8 +104,18 @@ public class Main implements ApplicationListener {
         }
 
         drawPlayer();
-
         batch.end();
+
+        // Desenha hitboxes (para debug)
+        shapeRenderer.begin(ShapeRenderer.ShapeType.Line);
+        shapeRenderer.setColor(Color.RED);
+        shapeRenderer.rect(hitboxJogador.x, hitboxJogador.y, hitboxJogador.width, hitboxJogador.height);
+
+        shapeRenderer.setColor(Color.BLUE);
+        for (GameObject obj : objetos) {
+            shapeRenderer.rect(obj.bounds.x, obj.bounds.y, obj.bounds.width, obj.bounds.height);
+        }
+        shapeRenderer.end();
     }
 
     private void drawTiledBackground() {
@@ -171,33 +188,34 @@ public class Main implements ApplicationListener {
             currentSprite.setRegion(cyclistFrontTexture);
         }
 
-        // Verifica colisão antes de mover
-        Vector2 nextPos = new Vector2(worldPosition).add(movement);
-        Rectangle nextRect = getPlayerRect(nextPos);
+        // Aplica movimento
+        worldPosition.add(movement);
+        updatePlayerHitbox();
 
-        boolean colidiu = false;
-        for (GameObject obj : objetos) {
-            if (nextRect.overlaps(obj.bounds)) {
-                colidiu = true;
-                break;
-            }
-        }
-
-        if (!colidiu) {
-            worldPosition.set(nextPos);
-        }
-
-        // Limita dentro do mundo
+        // Mantém dentro do mundo
         float width = currentSprite.getRegionWidth() * scale;
         float height = currentSprite.getRegionHeight() * scale;
         worldPosition.x = Math.max(0, Math.min(worldPosition.x, worldWidth - width));
         worldPosition.y = Math.max(0, Math.min(worldPosition.y, worldHeight - height));
     }
 
-    private Rectangle getPlayerRect(Vector2 pos) {
+    private void logic() {
+        // Loop inverso para evitar problemas ao remover objetos
+        for (int i = objetos.size - 1; i >= 0; i--) {
+            GameObject obj = objetos.get(i);
+
+            if (hitboxJogador.overlaps(obj.bounds)) {
+                if (obj.tipo == 1) {
+                    objetos.removeIndex(i); // tipo 1 → some ao tocar
+                }
+            }
+        }
+    }
+
+    private void updatePlayerHitbox() {
         float width = currentSprite.getRegionWidth() * scale;
         float height = currentSprite.getRegionHeight() * scale;
-        return new Rectangle(pos.x, pos.y, width, height);
+        hitboxJogador = new Rectangle(worldPosition.x, worldPosition.y, width, height);
     }
 
     @Override
@@ -208,6 +226,7 @@ public class Main implements ApplicationListener {
     @Override
     public void dispose() {
         batch.dispose();
+        shapeRenderer.dispose();
         cyclistSideTexture.dispose();
         cyclistFrontTexture.dispose();
         cyclistBackTexture.dispose();
@@ -222,11 +241,13 @@ public class Main implements ApplicationListener {
         Vector2 pos;
         Texture texture;
         Rectangle bounds;
+        int tipo;
 
-        GameObject(float x, float y, Texture texture) {
+        GameObject(float x, float y, Texture texture, int tipo) {
             this.pos = new Vector2(x, y);
             this.texture = texture;
             this.bounds = new Rectangle(x, y, texture.getWidth(), texture.getHeight());
+            this.tipo = tipo;
         }
 
         void draw(SpriteBatch batch) {
