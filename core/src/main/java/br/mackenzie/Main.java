@@ -286,7 +286,7 @@ public class Main implements ApplicationListener {
             } else {
                 batch.setColor(color);
             }
-            batch.draw(currentFrame, x - 16, y - 16, 32, 32);
+            batch.draw(currentFrame, x - 32, y - 32, 64, 64);
             batch.setColor(1f, 1f, 1f, 1f);
         }
     }
